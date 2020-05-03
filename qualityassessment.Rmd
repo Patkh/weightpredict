@@ -1,0 +1,180 @@
+---
+title: "WeighLifting Class Prediction"
+author: "Hemant P"
+date: "5/1/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE, comment=""}
+knitr::opts_chunk$set(echo = TRUE, cache=TRUE)
+library(caret)
+```
+
+## Executive Summary
+The human activity recognition research has traditionally focused on discriminating between different activities, i.e. to predict "which" activity was performed at a specific point in time but not really on the "how" part i.e. how well was an activity done
+
+This study explores and investigates Weight Lifting Exercises dataset and comes up with a machine learning model to predict "how well" an activity was performed by the wearer. A random forest algorithm is chosen and it predicts how well the activity was done with 99.8% accuracy.
+
+## Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions:
+
+- Class A: exactly according to the specification
+- Class B: throwing the elbows to the front 
+- Class C: lifting the dumbbell only halfway 
+- Class D: lowering the dumbbell only halfway 
+- Class E: throwing the hips to the front
+
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. Participants were supervised by an experienced weight lifter to make sure the execution complied to the manner they were supposed to simulate. Data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants 
+was collected and used for analysis.
+
+In this study, the goal is to predict the manner in which the participants did the exercise. This is the "classe" variable in the training set. Exploratory Analysis and Machine learning techniques were used to make the prediction.
+
+#### Data Description
+The data for this project was taken from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har. 
+
+## Exploratory Data Analysis 
+
+```{r readFiles, echo=TRUE, comment=""}
+# Read the training and test sets.
+pmltrain <- read.csv("C:/Rdata/pml-training.csv")
+pmltest <- read.csv("C:/Rdata/pml-testing.csv")
+
+#Store the column names for further analysis
+colnm <- colnames(pmltrain)
+# The training and test sets comprises of 160 variables to start with
+dim(pmltrain)
+```
+
+```{r helperFunctions, echo=FALSE}
+#The helper function below lists the column numbers that have lot of NAs in them and need to removed from the analysis
+listNAColumns <- function() {
+  p2 <- NULL
+  p3 <- NULL
+  for (i in 1:160) { 
+    # exclude factor variables
+    if (!is.factor(pmltrain[,i])) {
+      if (any(is.na(pmltrain[,i]))) {
+        # p2 contains number of observations with NAs in them.
+        # we used it for exploratory analysis as 19000+ observations
+        # had NAs in them
+        c2 <- cbind( "NA",i,sum(is.na(pmltrain[,i])))
+        p2 <- rbind( p2,c2) 
+        # create a list of columns with NAs.
+        str1 <- paste0(i,",") 
+        p3 <- paste0(p3, str1)
+      }
+    }
+  }
+  p3
+}
+```
+## Data Cleansing and Transformations
+
+The dataset has 19600+ observations and 160 variables or features. It is necessary to perform some cleaning on the dataset to remove features that will not aid in prediction of *classe* variable. We will remove columns that contain NAs, have minimum or zero variance. We will also remove variables that will not aid in analysis. Below is the set of 
+transformations that will be performed on the data.
+
+#### Transformation 1 : columns with Majoriy NAs will be removed.
+The columns can be imputed with knnimpute method but a vast majority of
+the observations for all variables/features have NAs (19216 obervations out of 19622). Hence, imputing them won't help much. It is better to exclude them from the analysis. Following column numbers will be excluded from subsequent analysis as these have over 97% NAs.
+```{r transform1, comment=""}
+NAcols <- listNAColumns()
+pmltrainsub <- pmltrain[,-c(as.numeric(strsplit(NAcols,",")[[1]]))]
+NAcols
+```
+
+#### Transformation 2: Remove columns with zero or near zero variance
+```{r transform2, comment=""}
+zerocols <- nearZeroVar(pmltrainsub)
+pmltrainsub <- pmltrainsub[,-c(zerocols)]
+zerocols
+```
+
+#### Transformation 3: Remove first five columns related to username, timestamps etc.
+```{r transform3, comment=""}
+colnames(pmltrainsub[,1:5])
+pmltrainsub <- pmltrainsub[,-c(1:5)]
+dim(pmltrainsub)
+```
+With this, we have reduced the number of variables/features in dataset that can be considered to build machine learning models to 53 (excluding *classe* variable).
+
+### Repeat same transformations on test set
+```{r comment=""}
+pmltestsub <- pmltest[,-c(as.numeric(strsplit(NAcols,",")[[1]]))]
+pmltestsub <- pmltestsub[,-c(zerocols)]
+pmltestsub <- pmltestsub[,-c(1:5)]
+dim(pmltestsub)
+```
+
+## Model development
+Split the training set into sub-training set and validation set.
+Have 70% in training set and 30% in validation set. We develop the model using the training set and then check the accuracy using the validation set.
+
+```{r splitTrainData, echo=TRUE}
+intrain <- createDataPartition(pmltrainsub$classe,p=0.7,list=FALSE)
+pmltrainset <- pmltrainsub[intrain,]
+pmltrainvalset <- pmltrainsub[-intrain,]
+```
+
+We will test two models - based on random forest and gradient boosting algorithm. We will choose a model with 99% accuracy (less than 1% out-of-sample error) 
+
+### Model 1 - Random Forest
+We use the random forest method using k-fold repeated cross-validation on the training set. We use 10 folds with 3 repetitions. We use ntrees value of 251. This provided slightly better accuracy values as compared to ntrees values of 51. 
+
+```{r model, echo=TRUE}
+set.seed(32323)
+trControl <- trainControl(method="repeatedcv",number = 10,repeats=3)
+mod_rf <- train(classe~.,method="rf",   
+                trainControl=trControl,data=pmltrainset,ntree=251)
+```
+#### Model Accuracy and Out-of-sample error
+```{r modela, echo=TRUE, comment=""}
+mod_rf
+```
+The accuracy is `r round(mod_rf$results$Accuracy[2]*100,2)`% which is extremely good. The out of sample error is `r  100 -  round(mod_rf$results$Accuracy[2]*100,2)`%
+
+### Model 2 - gradient boosting
+We try another model using gradient boosting algorithm
+```{r model2, echo=TRUE}
+set.seed(32323)
+mod_gbm <- train(classe~.,method="gbm",   
+                 data=pmltrainset, verbose=FALSE)
+```
+
+```{r model2a, echo=TRUE, comment=""}
+mod_gbm$results[,1:5]
+```
+The accuracy of this model for best case is 0.984 or `r round(mod_gbm$results$Accuracy[9]*100,2)`% which is good but less than the random forest model's approach. Since the prediction from first model itself is very good, it may not be worth the processing effort to consider a combination of both models. We hence, drop this model from further analysis. 
+
+### Model Accuracy and out-of-sample error
+We will use the training validation set to check the accuracy and out-of-sample error on the model1 using random forest.
+```{r comment=""}
+confMat <- confusionMatrix(predict(mod_rf,pmltrainvalset),pmltrainvalset$classe)
+confMat
+```
+
+```{r echo=FALSE}
+acc <- round(confMat$overall[[1]],4)
+```
+This shows that the accuracy is **`r acc * 100`%** and out-of-sample error is 1 - accuracy i.e. **`r 1-acc`** or **`r (1-acc)*100`%**. This is within the out-of-sample error prediction rate of **`r  100 -  round(mod_rf$results$Accuracy[2]*100,2)`%**. The model performs well and this can now be applied on the original test set to make predictions
+of classe variable.
+
+### Prediction on original test set
+Run a prediction test on original test set comprising of 20 observations. 
+```{r testPrediction, echo=TRUE, comment=""}
+predict(mod_rf,pmltestsub)
+```
+
+## Summary
+The original testset was used to predict the classe variable using model 1 based on random forest algorithm. The values obtained from prediction test were compared against the actual values from the assignment and these were 100% accurate. 
+
+### Appendix-A
+
+The most important variables that affect the prediction are:
+```{r, comment=""}
+varImp(mod_rf)
+
+# listNAColumns function definition
+listNAColumns
+```
